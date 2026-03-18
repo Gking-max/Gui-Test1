@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CineSearch Pro</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>CineSearch Pro</h1>
+            <div class="search-container" data-loading="false">
+                <input 
+                    type="text" 
+                    id="searchInput" 
+                    placeholder="Search for movies..."
+                    aria-label="Search movies"
+                >
+                <div class="spinner" aria-hidden="true"></div>
+            </div>
+        </header>
+
+        <main class="dashboard">
+            <section class="search-results" id="searchResults">
+                <h2>Results</h2>
+                <ul class="results-list" id="resultsList" role="listbox"></ul>
+            </section>
+
+            <section class="movie-details" id="movieDetails">
+                <h2>Movie Details</h2>
+                <template id="movieDetailTemplate">
+                    <div class="detail-panel">
+                        <div class="detail-section" id="detailsSection"></div>
+                        <div class="detail-section" id="creditsSection"></div>
+                        <div class="detail-section" id="videosSection"></div>
+                    </div>
+                </template>
+            </section>
+        </main>
+
+        <template id="movieResultTemplate">
+            <li class="movie-result" role="option" tabindex="-1">
+                <div class="movie-title"></div>
+                <div class="movie-year"></div>
+            </li>
+        </template>
+    </div>
+    <script src="app.js"></script>
+</body>
+</html>

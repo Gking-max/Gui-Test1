@@ -1,0 +1,114 @@
+/* styles.css */
+:root {
+    --primary-color: #3498db;
+    --error-color: #e74c3c;
+    --success-color: #2ecc71;
+    --text-color: #333;
+    --border-color: #ddd;
+}
+
+.container {
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 20px;
+}
+
+/* Search container with loading state */
+.search-container {
+    position: relative;
+    display: inline-block;
+}
+
+.search-container[data-loading="true"] .spinner {
+    display: inline-block;
+}
+
+.spinner {
+    display: none;
+    position: absolute;
+    right: 10px;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 20px;
+    height: 20px;
+    border: 2px solid var(--border-color);
+    border-top-color: var(--primary-color);
+    border-radius: 50%;
+    animation: spin 0.6s linear infinite;
+}
+
+@keyframes spin {
+    to { transform: translateY(-50%) rotate(360deg); }
+}
+
+#searchInput {
+    width: 300px;
+    padding: 10px;
+    border: 2px solid var(--border-color);
+    border-radius: 5px;
+    font-size: 16px;
+}
+
+#searchInput:focus {
+    outline: none;
+    border-color: var(--primary-color);
+}
+
+/* Results list styling */
+.results-list {
+    list-style: none;
+    padding: 0;
+    margin: 20px 0;
+    max-height: 500px;
+    overflow-y: auto;
+}
+
+.movie-result {
+    padding: 15px;
+    border: 1px solid var(--border-color);
+    margin-bottom: 5px;
+    cursor: pointer;
+    transition: background-color 0.2s;
+}
+
+.movie-result:hover,
+.movie-result[aria-selected="true"] {
+    background-color: #f5f5f5;
+}
+
+.movie-result.active {
+    background-color: var(--primary-color);
+    color: white;
+}
+
+/* Highlight styling - XSS safe */
+.highlight {
+    background-color: yellow;
+    font-weight: bold;
+}
+
+/* Detail panel styling */
+.detail-panel {
+    display: grid;
+    gap: 20px;
+}
+
+.detail-section {
+    padding: 15px;
+    border: 1px solid var(--border-color);
+    border-radius: 5px;
+}
+
+.detail-section.error {
+    border-color: var(--error-color);
+    background-color: #fff3f3;
+}
+
+/* Error state styling */
+.error-message {
+    color: var(--error-color);
+    padding: 10px;
+    border: 1px solid var(--error-color);
+    border-radius: 3px;
+    margin: 10px 0;
+}
