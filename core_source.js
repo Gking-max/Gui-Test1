@@ -339,3 +339,56 @@ selectMovie(movie) {
     // Fetch and display movie details with concurrent requests
     this.fetchMovieDetails(movie.id);
 }
+
+// Add this method to handle keyboard navigation
+handleKeyNavigation(event) {
+    const results = this.resultsList.children;
+    
+    if (results.length === 0) return;
+    
+    switch(event.key) {
+        case 'ArrowDown':
+            event.preventDefault();
+            this.selectedIndex = Math.min(this.selectedIndex + 1, results.length - 1);
+            this.updateSelectedResult();
+            break;
+            
+        case 'ArrowUp':
+            event.preventDefault();
+            this.selectedIndex = Math.max(this.selectedIndex - 1, -1);
+            this.updateSelectedResult();
+            break;
+            
+        case 'Enter':
+            event.preventDefault();
+            if (this.selectedIndex >= 0 && this.selectedIndex < results.length) {
+                this.selectMovie(this.currentResults[this.selectedIndex]);
+            }
+            break;
+            
+        case 'Escape':
+            this.clearResults();
+            this.searchInput.value = '';
+            break;
+    }
+}
+
+updateSelectedResult() {
+    const results = this.resultsList.children;
+    
+    // Remove all active classes and aria-selected
+    Array.from(results).forEach(result => {
+        result.classList.remove('active');
+        result.removeAttribute('aria-selected');
+    });
+    
+    // Add active class to selected
+    if (this.selectedIndex >= 0 && this.selectedIndex < results.length) {
+        const selected = results[this.selectedIndex];
+        selected.classList.add('active');
+        selected.setAttribute('aria-selected', 'true');
+        
+        // Scroll into view if needed
+        selected.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+    }
+}
