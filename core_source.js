@@ -1,4 +1,5 @@
-// app.js
+// app.js - Complete CineSearch Pro Application
+
 class CineSearchPro {
     constructor() {
         // State management
@@ -12,6 +13,13 @@ class CineSearchPro {
         // API Configuration
         this.apiKey = 'YOUR_TMDB_API_KEY'; // Replace with your actual key
         this.baseUrl = 'https://api.themoviedb.org/3';
+        this.imageBaseUrl = 'https://image.tmdb.org/t/p/w200';
+        
+        // Validate API key
+        if (this.apiKey === 'YOUR_TMDB_API_KEY') {
+            console.warn('⚠️ Please add your TMDB API key to use this application');
+            this.showPersistentError('API key not configured. Please add your TMDB API key to use the search feature.');
+        }
         
         // DOM Elements
         this.searchInput = document.getElementById('searchInput');
@@ -38,9 +46,14 @@ class CineSearchPro {
             const movieItem = e.target.closest('.movie-result');
             if (movieItem) {
                 const index = Array.from(this.resultsList.children).indexOf(movieItem);
-                this.selectMovie(this.currentResults[index]);
+                if (this.currentResults[index]) {
+                    this.selectMovie(this.currentResults[index]);
+                }
             }
         });
+        
+        // Focus search input on page load
+        this.searchInput.focus();
     }
     
     // Set loading state using data attribute
@@ -51,6 +64,7 @@ class CineSearchPro {
     // Debounce implementation
     handleSearchInput(event) {
         const searchTerm = event.target.value.trim();
+        this.currentSearchTerm = searchTerm;
         
         // Clear existing timer
         if (this.debounceTimer) {
@@ -71,62 +85,71 @@ class CineSearchPro {
     
     // Main search function with cache and abort controller
     async performSearch(searchTerm) {
-        // Check cache first
-        if (this.searchCache.has(searchTerm)) {
-            this.currentResults = this.searchCache.get(searchTerm);
-            this.renderResults(this.currentResults);
+        const normalizedTerm = searchTerm.toLowerCase().trim();
+        
+        // Check cache first with normalized key
+        if (this.searchCache.has(normalizedTerm)) {
+            console.log('📦 Cache hit for:', normalizedTerm);
+            this.currentResults = this.searchCache.get(normalizedTerm);
+            this.renderResults(this.currentResults, searchTerm);
             return;
         }
+        
+        console.log('🌐 Fetching from API for:', normalizedTerm);
         
         // Cancel any in-flight request
         if (this.currentAbortController) {
             this.currentAbortController.abort();
+            this.currentAbortController = null;
         }
         
         // Create new abort controller for this request
         this.currentAbortController = new AbortController();
+        const controller = this.currentAbortController;
         
         try {
             this.setLoading(true);
             
             const response = await fetch(
                 `${this.baseUrl}/search/movie?api_key=${this.apiKey}&query=${encodeURIComponent(searchTerm)}`,
-                { signal: this.currentAbortController.signal }
+                { signal: controller.signal }
             );
             
             if (!response.ok) {
-                throw new Error(`Search failed: ${response.status}`);
+                throw new Error(`Search failed: ${response.status} - ${response.statusText}`);
             }
             
             const data = await response.json();
             
-            // Cache the results
-            this.searchCache.set(searchTerm, data.results);
+            // Store with normalized key
+            this.searchCache.set(normalizedTerm, data.results);
             this.currentResults = data.results;
             
             // Render results using Fragment pattern
-            this.renderResults(data.results);
+            this.renderResults(data.results, searchTerm);
             
         } catch (error) {
             if (error.name === 'AbortError') {
-                console.log('Previous search cancelled');
+                console.log('🔴 Search cancelled for:', normalizedTerm);
                 return;
             }
             console.error('Search error:', error);
-            this.showError('Failed to fetch movies. Please try again.');
+            this.showError(`Failed to fetch movies: ${error.message}`);
         } finally {
-            this.setLoading(false);
-            this.currentAbortController = null;
+            if (this.currentAbortController === controller) {
+                this.setLoading(false);
+                this.currentAbortController = null;
+            }
         }
     }
     
     // Render results using DocumentFragment and template
-    renderResults(results) {
+    renderResults(results, searchTerm) {
         // Clear previous results
-        this.resultsList.innerHTML = '';
+        this.clearResultsList();
         
         if (results.length === 0) {
-            this.showError('No movies found');
+            this.showNoResults();
             return;
         }
         
@@ -146,13 +169,18 @@ class CineSearchPro {
             // XSS-safe title with highlighting
             const highlightedTitle = this.buildHighlightedTitle(
                 movie.title, 
-                this.searchInput.value.trim()
+                searchTerm
             );
+            
+            // Clear and append title
+            titleElement.innerHTML = '';
             titleElement.appendChild(highlightedTitle);
             
             // Year (XSS safe - textContent)
             if (movie.release_date) {
                 yearElement.textContent = new Date(movie.release_date).getFullYear();
+            } else {
+                yearElement.textContent = 'Year unknown';
             }
             
             fragment.appendChild(clone);
@@ -163,6 +191,21 @@ class CineSearchPro {
         
         // Reset selected index
         this.selectedIndex = -1;
+    }
+    
+    // Clear results list safely
+    clearResultsList() {
+        while (this.resultsList.firstChild) {
+            this.resultsList.removeChild(this.resultsList.firstChild);
+        }
+    }
+    
+    // Show no results message
+    showNoResults() {
+        const noResultsDiv = document.createElement('div');
+        noResultsDiv.className = 'empty-state';
+        noResultsDiv.textContent = 'No movies found. Try a different search term.';
+        this.resultsList.appendChild(noResultsDiv);
     }
     
     // XSS-safe highlighting using DOM API only
@@ -205,190 +248,322 @@ class CineSearchPro {
     
     // Clear results
     clearResults() {
-        this.resultsList.innerHTML = '';
+        this.clearResultsList();
         this.currentResults = [];
         this.selectedIndex = -1;
     }
     
-    // Show error message
+    // Show error message (XSS safe)
     showError(message) {
+        this.clearResultsList();
         const errorDiv = document.createElement('div');
         errorDiv.className = 'error-message';
         errorDiv.textContent = message;
         this.resultsList.appendChild(errorDiv);
     }
-}
-
-// Initialize app
-document.addEventListener('DOMContentLoaded', () => {
-    new CineSearchPro();
-});
-
-// Add these methods to the CineSearchPro class
-
-async fetchMovieDetails(movieId) {
-    const urls = [
-        `${this.baseUrl}/movie/${movieId}?api_key=${this.apiKey}`,           // Details
-        `${this.baseUrl}/movie/${movieId}/credits?api_key=${this.apiKey}`,  // Credits
-        `${this.baseUrl}/movie/${movieId}/videos?api_key=${this.apiKey}`    // Videos
-    ];
     
-    // For testing resilience - you can deliberately break one URL
-    // Uncomment this line to test error resilience:
-    // urls[1] = urls[1] + 'broken'; // Break the credits endpoint
+    // Show persistent error for API key
+    showPersistentError(message) {
+        const errorDiv = document.createElement('div');
+        errorDiv.className = 'error-message';
+        errorDiv.textContent = message;
+        errorDiv.style.margin = '20px';
+        errorDiv.style.textAlign = 'center';
+        document.querySelector('.container').prepend(errorDiv);
+    }
     
-    try {
-        // Use Promise.allSettled for resilience
-        const results = await Promise.allSettled(
-            urls.map(url => fetch(url).then(res => {
-                if (!res.ok) throw new Error(`HTTP ${res.status}`);
-                return res.json();
-            }))
+    // Fetch movie details with concurrent requests
+    async fetchMovieDetails(movieId) {
+        // Show loading state
+        this.movieDetails.innerHTML = '';
+        const loadingDiv = document.createElement('div');
+        loadingDiv.className = 'loading';
+        loadingDiv.textContent = 'Loading movie details';
+        this.movieDetails.appendChild(loadingDiv);
+        
+        const urls = [
+            `${this.baseUrl}/movie/${movieId}?api_key=${this.apiKey}`,           // Details
+            `${this.baseUrl}/movie/${movieId}/credits?api_key=${this.apiKey}`,  // Credits
+            `${this.baseUrl}/movie/${movieId}/videos?api_key=${this.apiKey}`    // Videos
+        ];
+        
+        // For testing resilience - uncomment to test error handling
+        // urls[1] = urls[1] + '/broken'; // This will break the credits endpoint
+        
+        try {
+            // Use Promise.allSettled for resilience
+            const results = await Promise.allSettled(
+                urls.map(url => fetch(url).then(res => {
+                    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+                    return res.json();
+                }))
+            );
+            
+            this.renderMovieDetails(results);
+            
+        } catch (error) {
+            console.error('Error fetching details:', error);
+            this.showDetailError('Failed to load movie details');
+        }
+    }
+    
+    // Render movie details (XSS safe)
+    renderMovieDetails(results) {
+        const [detailsResult, creditsResult, videosResult] = results;
+        
+        // Clear previous details
+        this.movieDetails.innerHTML = '';
+        
+        // Clone template
+        const clone = this.detailTemplate.content.cloneNode(true);
+        
+        // Get sections (use querySelector for fragments)
+        const detailsSection = clone.querySelector('#detailsSection');
+        const creditsSection = clone.querySelector('#creditsSection');
+        const videosSection = clone.querySelector('#videosSection');
+        
+        // Clear sections
+        detailsSection.innerHTML = '';
+        creditsSection.innerHTML = '';
+        videosSection.innerHTML = '';
+        
+        // Handle Details (XSS-safe)
+        if (detailsResult.status === 'fulfilled') {
+            const details = detailsResult.value;
+            
+            // Build details DOM safely
+            const title = document.createElement('h3');
+            title.textContent = details.title;
+            
+            // Add poster if available (XSS safe - using background-image)
+            if (details.poster_path) {
+                const poster = document.createElement('div');
+                poster.style.cssText = `
+                    width: 100%;
+                    height: 200px;
+                    background-image: url(${this.imageBaseUrl}${details.poster_path});
+                    background-size: cover;
+                    background-position: center;
+                    border-radius: 8px;
+                    margin-bottom: 15px;
+                `;
+                detailsSection.appendChild(poster);
+            }
+            
+            const overview = document.createElement('p');
+            overview.textContent = details.overview || 'No overview available';
+            
+            const releaseDate = document.createElement('p');
+            releaseDate.innerHTML = '<strong>Release Date:</strong> ';
+            releaseDate.appendChild(document.createTextNode(details.release_date || 'Unknown'));
+            
+            const rating = document.createElement('p');
+            rating.innerHTML = '<strong>Rating:</strong> ';
+            rating.appendChild(document.createTextNode(
+                details.vote_average ? `${details.vote_average.toFixed(1)}/10` : 'N/A'
+            ));
+            
+            detailsSection.appendChild(title);
+            detailsSection.appendChild(overview);
+            detailsSection.appendChild(releaseDate);
+            detailsSection.appendChild(rating);
+            
+        } else {
+            detailsSection.classList.add('error');
+            const errorMsg = document.createElement('p');
+            errorMsg.className = 'error-message';
+            errorMsg.textContent = 'Failed to load movie details';
+            detailsSection.appendChild(errorMsg);
+        }
+        
+        // Handle Credits (XSS-safe)
+        if (creditsResult.status === 'fulfilled') {
+            const credits = creditsResult.value;
+            const cast = credits.cast?.slice(0, 5).map(c => c.name).join(', ') || 'No cast info';
+            const director = credits.crew?.find(c => c.job === 'Director')?.name || 'Unknown';
+            
+            const title = document.createElement('h4');
+            title.textContent = 'Cast & Crew';
+            
+            const directorPara = document.createElement('p');
+            directorPara.innerHTML = '<strong>Director:</strong> ';
+            directorPara.appendChild(document.createTextNode(director));
+            
+            const castPara = document.createElement('p');
+            castPara.innerHTML = '<strong>Cast:</strong> ';
+            castPara.appendChild(document.createTextNode(cast));
+            
+            creditsSection.appendChild(title);
+            creditsSection.appendChild(directorPara);
+            creditsSection.appendChild(castPara);
+            
+        } else {
+            creditsSection.classList.add('error');
+            const errorMsg = document.createElement('p');
+            errorMsg.className = 'error-message';
+            errorMsg.textContent = 'Failed to load credits';
+            creditsSection.appendChild(errorMsg);
+        }
+        
+        // Handle Videos (XSS-safe)
+        if (videosResult.status === 'fulfilled') {
+            const videos = videosResult.value;
+            const trailer = videos.results?.find(v => v.type === 'Trailer');
+            
+            const title = document.createElement('h4');
+            title.textContent = 'Videos';
+            videosSection.appendChild(title);
+            
+            if (trailer) {
+                const trailerPara = document.createElement('p');
+                trailerPara.textContent = `Trailer: ${trailer.name}`;
+                
+                const link = document.createElement('a');
+                link.href = `https://www.youtube.com/watch?v=${trailer.key}`;
+                link.target = '_blank';
+                link.rel = 'noopener noreferrer';
+                link.textContent = 'Watch Trailer';
+                
+                videosSection.appendChild(trailerPara);
+                videosSection.appendChild(link);
+            } else {
+                const noVideos = document.createElement('p');
+                noVideos.textContent = 'No videos available';
+                videosSection.appendChild(noVideos);
+            }
+            
+        } else {
+            videosSection.classList.add('error');
+            const errorMsg = document.createElement('p');
+            errorMsg.className = 'error-message';
+            errorMsg.textContent = 'Failed to load videos';
+            videosSection.appendChild(errorMsg);
+        }
+        
+        this.movieDetails.appendChild(clone);
+    }
+    
+    // Show detail error (XSS safe)
+    showDetailError(message) {
+        this.movieDetails.innerHTML = '';
+        const errorDiv = document.createElement('div');
+        errorDiv.className = 'error-message';
+        errorDiv.textContent = message;
+        this.movieDetails.appendChild(errorDiv);
+    }
+    
+    // Select and display movie details
+    selectMovie(movie) {
+        if (!movie) return;
+        
+        // Find and highlight the selected movie in results
+        const allResults = Array.from(this.resultsList.children);
+        const selectedIndex = this.currentResults.findIndex(m => m.id === movie.id);
+        
+        // Remove active class from all results
+        allResults.forEach(result => {
+            result.classList.remove('active');
+            result.removeAttribute('aria-selected');
+        });
+        
+        // Add active class to the selected movie
+        if (selectedIndex !== -1) {
+            allResults[selectedIndex].classList.add('active');
+            allResults[selectedIndex].setAttribute('aria-selected', 'true');
+            this.selectedIndex = selectedIndex;
+        }
+        
+        // Fetch and display movie details
+        this.fetchMovieDetails(movie.id);
+    }
+    
+    // Handle keyboard navigation
+    handleKeyNavigation(event) {
+        const results = Array.from(this.resultsList.children).filter(
+            child => child.classList.contains('movie-result')
         );
         
-        this.renderMovieDetails(results);
+        if (results.length === 0) return;
         
-    } catch (error) {
-        console.error('Error fetching details:', error);
-        this.showDetailError('Failed to load movie details');
-    }
-}
-
-renderMovieDetails([detailsResult, creditsResult, videosResult]) {
-    // Clear previous details
-    this.movieDetails.innerHTML = '';
-    
-    // Clone template
-    const clone = this.detailTemplate.content.cloneNode(true);
-    const detailsSection = clone.getElementById('detailsSection');
-    const creditsSection = clone.getElementById('creditsSection');
-    const videosSection = clone.getElementById('videosSection');
-    
-    // Handle Details (required - if this fails, show error)
-    if (detailsResult.status === 'fulfilled') {
-        const details = detailsResult.value;
-        detailsSection.innerHTML = `
-            <h3>${details.title}</h3>
-            <p>${details.overview || 'No overview available'}</p>
-            <p>Release Date: ${details.release_date || 'Unknown'}</p>
-            <p>Rating: ${details.vote_average ? details.vote_average.toFixed(1) : 'N/A'}/10</p>
-        `;
-    } else {
-        detailsSection.classList.add('error');
-        detailsSection.innerHTML = '<p class="error-message">Failed to load movie details</p>';
-    }
-    
-    // Handle Credits (resilient)
-    if (creditsResult.status === 'fulfilled') {
-        const credits = creditsResult.value;
-        const cast = credits.cast?.slice(0, 5).map(c => c.name).join(', ') || 'No cast info';
-        const director = credits.crew?.find(c => c.job === 'Director')?.name || 'Unknown';
-        
-        creditsSection.innerHTML = `
-            <h4>Cast & Crew</h4>
-            <p><strong>Director:</strong> ${director}</p>
-            <p><strong>Cast:</strong> ${cast}</p>
-        `;
-    } else {
-        creditsSection.classList.add('error');
-        creditsSection.innerHTML = '<p class="error-message">Failed to load credits</p>';
+        switch(event.key) {
+            case 'ArrowDown':
+                event.preventDefault();
+                this.selectedIndex = Math.min(this.selectedIndex + 1, results.length - 1);
+                this.updateSelectedResult(results);
+                break;
+                
+            case 'ArrowUp':
+                event.preventDefault();
+                this.selectedIndex = Math.max(this.selectedIndex - 1, 0);
+                this.updateSelectedResult(results);
+                break;
+                
+            case 'Enter':
+                event.preventDefault();
+                if (this.selectedIndex >= 0 && this.selectedIndex < results.length) {
+                    const movieId = results[this.selectedIndex].dataset.movieId;
+                    const movie = this.currentResults.find(m => m.id == movieId);
+                    if (movie) {
+                        this.selectMovie(movie);
+                    }
+                }
+                break;
+                
+            case 'Escape':
+                this.clearResults();
+                this.searchInput.value = '';
+                this.searchInput.focus();
+                break;
+        }
     }
     
-    // Handle Videos (resilient)
-    if (videosResult.status === 'fulfilled') {
-        const videos = videosResult.value;
-        const trailer = videos.results?.find(v => v.type === 'Trailer');
+    // Update selected result styling
+    updateSelectedResult(results) {
+        // Remove all active classes and aria-selected
+        results.forEach(result => {
+            result.classList.remove('active');
+            result.removeAttribute('aria-selected');
+        });
         
-        videosSection.innerHTML = `
-            <h4>Videos</h4>
-            ${trailer 
-                ? `<p>Trailer: ${trailer.name}</p>
-                   <a href="https://www.youtube.com/watch?v=${trailer.key}" target="_blank">
-                      Watch Trailer
-                   </a>`
-                : '<p>No videos available</p>'
+        // Add active class to selected
+        if (this.selectedIndex >= 0 && this.selectedIndex < results.length) {
+            const selected = results[this.selectedIndex];
+            selected.classList.add('active');
+            selected.setAttribute('aria-selected', 'true');
+            
+            // Scroll into view if needed
+            selected.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+        }
+    }
+    
+    // Clear cache (utility method for debugging)
+    clearCache() {
+        this.searchCache.clear();
+        console.log('🗑️ Cache cleared');
+        this.showError('Cache cleared. Next search will fetch from API.');
+        setTimeout(() => {
+            if (this.resultsList.children.length === 0) {
+                this.clearResultsList();
             }
-        `;
-    } else {
-        videosSection.classList.add('error');
-        videosSection.innerHTML = '<p class="error-message">Failed to load videos</p>';
+        }, 2000);
     }
-    
-    this.movieDetails.appendChild(clone);
 }
 
-showDetailError(message) {
-    this.movieDetails.innerHTML = `<div class="error-message">${message}</div>`;
-}
-
-// Update selectMovie method to fetch details
-selectMovie(movie) {
-    if (!movie) return;
+// Initialize app when DOM is ready
+document.addEventListener('DOMContentLoaded', () => {
+    window.cineSearch = new CineSearchPro();
     
-    // Remove active class from all results
-    Array.from(this.resultsList.children).forEach(child => {
-        child.classList.remove('active');
+    // Add cache clear shortcut for testing (Ctrl+Shift+C)
+    document.addEventListener('keydown', (e) => {
+        if (e.ctrlKey && e.shiftKey && e.key === 'C') {
+            e.preventDefault();
+            if (window.cineSearch) {
+                window.cineSearch.clearCache();
+            }
+        }
     });
     
-    // Add active class to selected movie
-    const selectedElement = this.resultsList.children[this.selectedIndex];
-    if (selectedElement) {
-        selectedElement.classList.add('active');
-    }
-    
-    // Fetch and display movie details with concurrent requests
-    this.fetchMovieDetails(movie.id);
-}
-
-// Add this method to handle keyboard navigation
-handleKeyNavigation(event) {
-    const results = this.resultsList.children;
-    
-    if (results.length === 0) return;
-    
-    switch(event.key) {
-        case 'ArrowDown':
-            event.preventDefault();
-            this.selectedIndex = Math.min(this.selectedIndex + 1, results.length - 1);
-            this.updateSelectedResult();
-            break;
-            
-        case 'ArrowUp':
-            event.preventDefault();
-            this.selectedIndex = Math.max(this.selectedIndex - 1, -1);
-            this.updateSelectedResult();
-            break;
-            
-        case 'Enter':
-            event.preventDefault();
-            if (this.selectedIndex >= 0 && this.selectedIndex < results.length) {
-                this.selectMovie(this.currentResults[this.selectedIndex]);
-            }
-            break;
-            
-        case 'Escape':
-            this.clearResults();
-            this.searchInput.value = '';
-            break;
-    }
-}
-
-updateSelectedResult() {
-    const results = this.resultsList.children;
-    
-    // Remove all active classes and aria-selected
-    Array.from(results).forEach(result => {
-        result.classList.remove('active');
-        result.removeAttribute('aria-selected');
-    });
-    
-    // Add active class to selected
-    if (this.selectedIndex >= 0 && this.selectedIndex < results.length) {
-        const selected = results[this.selectedIndex];
-        selected.classList.add('active');
-        selected.setAttribute('aria-selected', 'true');
-        
-        // Scroll into view if needed
-        selected.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
-    }
-}
+    console.log('🎬 CineSearch Pro initialized');
+    console.log('💡 Tip: Press Ctrl+Shift+C to clear cache');
+    console.log('🔧 For testing: Uncomment the broken URL in fetchMovieDetails() to test resilience');
+});
