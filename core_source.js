@@ -11,7 +11,7 @@ class CineSearchPro {
         this.currentSearchTerm = '';
         
         // API Configuration
-        this.apiKey = 'YOUR_TMDB_API_KEY'; // Replace with your actual key
+        this.apiKey = '0f91b4cca3897c8a5ffcbd73f6061b43'; // Replace with your actual key
         this.baseUrl = 'https://api.themoviedb.org/3';
         this.imageBaseUrl = 'https://image.tmdb.org/t/p/w200';
         
