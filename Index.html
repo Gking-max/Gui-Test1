@@ -5,48 +5,46 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>CineSearch Pro</title>
     <link rel="stylesheet" href="style.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 </head>
 <body>
     <div class="container">
         <header>
-            <h1>CineSearch Pro</h1>
-            <div class="search-container" data-loading="false">
-                <input 
-                    type="text" 
-                    id="searchInput" 
-                    placeholder="Search for movies..."
-                    aria-label="Search movies"
-                    autocomplete="off"
-                >
-                <div class="spinner" aria-hidden="true"></div>
-            </div>
+            <h1>🎬 CineSearch Pro</h1>
+            <p>Search for any movie</p>
         </header>
 
-        <main class="dashboard">
-            <section class="search-results" id="searchResults">
-                <h2>Results</h2>
-                <ul class="results-list" id="resultsList" role="listbox"></ul>
-            </section>
+        <!-- Search Section -->
+        <div class="search-section" id="searchSection">
+            <input type="text" id="searchInput" placeholder="Search for a movie..." autocomplete="off">
+            <div class="loading-spinner"></div>
+        </div>
 
-            <section class="movie-details" id="movieDetails">
-                <h2>Movie Details</h2>
-                <template id="movieDetailTemplate">
-                    <div class="detail-panel">
-                        <div class="detail-section" id="detailsSection"></div>
-                        <div class="detail-section" id="creditsSection"></div>
-                        <div class="detail-section" id="videosSection"></div>
-                    </div>
-                </template>
-            </section>
-        </main>
+        <!-- Results Section -->
+        <div id="resultsContainer" class="results-container">
+            <div class="empty-state">🔍 Start typing to search for movies</div>
+        </div>
 
-        <template id="movieResultTemplate">
-            <li class="movie-result" role="option" tabindex="-1">
+        <!-- Movie Detail Modal -->
+        <div id="movieModal" class="modal">
+            <div class="modal-content">
+                <span class="close">&times;</span>
+                <div id="movieDetailContent"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Template for movie cards -->
+    <template id="movieCardTemplate">
+        <div class="movie-card">
+            <img class="movie-poster" alt="">
+            <div class="movie-info">
                 <div class="movie-title"></div>
                 <div class="movie-year"></div>
-            </li>
-        </template>
-    </div>
+            </div>
+        </div>
+    </template>
+
     <script src="app.js"></script>
 </body>
 </html>

@@ -1,214 +1,148 @@
-// app.js - Complete CineSearch Pro Application
+// CineSearch Pro - Simple, Clean, Production Ready
 
 class CineSearchPro {
     constructor() {
-        // State management
-        this.searchCache = new Map();  // Cache for search results
+        // State
+        this.searchCache = new Map();
+        this.currentResults = [];
         this.currentAbortController = null;
         this.debounceTimer = null;
-        this.selectedIndex = -1;
-        this.currentResults = [];
-        this.currentSearchTerm = '';
-        
-        // API Configuration
-        this.apiKey = '0f91b4cca3897c8a5ffcbd73f6061b43'; // Replace with your actual key
+        this.apiKey = '0f91b4cca3897c8a5ffcbd73f6061b43';
         this.baseUrl = 'https://api.themoviedb.org/3';
-        this.imageBaseUrl = 'https://image.tmdb.org/t/p/w200';
-        
-        // Validate API key
-        if (this.apiKey === 'YOUR_TMDB_API_KEY') {
-            console.warn('⚠️ Please add your TMDB API key to use this application');
-            this.showPersistentError('API key not configured. Please add your TMDB API key to use the search feature.');
-        }
+        this.imageBaseUrl = 'https://image.tmdb.org/t/p/w500';
         
         // DOM Elements
         this.searchInput = document.getElementById('searchInput');
-        this.resultsList = document.getElementById('resultsList');
-        this.movieDetails = document.getElementById('movieDetails');
-        this.searchContainer = document.querySelector('.search-container');
-        this.resultTemplate = document.getElementById('movieResultTemplate');
-        this.detailTemplate = document.getElementById('movieDetailTemplate');
+        this.resultsContainer = document.getElementById('resultsContainer');
+        this.modal = document.getElementById('movieModal');
+        this.modalContent = document.getElementById('movieDetailContent');
+        this.searchSection = document.getElementById('searchSection');
+        this.template = document.getElementById('movieCardTemplate');
         
-        // Bind methods to maintain 'this' context
-        this.handleSearchInput = this.handleSearchInput.bind(this);
-        this.handleKeyNavigation = this.handleKeyNavigation.bind(this);
-        this.selectMovie = this.selectMovie.bind(this);
+        // Bind methods
+        this.handleSearch = this.handleSearch.bind(this);
+        this.handleKeyNav = this.handleKeyNav.bind(this);
         
-        // Initialize
         this.init();
     }
     
     init() {
-        // Event listeners
-        this.searchInput.addEventListener('input', this.handleSearchInput);
-        this.searchInput.addEventListener('keydown', this.handleKeyNavigation);
-        this.resultsList.addEventListener('click', (e) => {
-            const movieItem = e.target.closest('.movie-result');
-            if (movieItem) {
-                const index = Array.from(this.resultsList.children).indexOf(movieItem);
-                if (this.currentResults[index]) {
-                    this.selectMovie(this.currentResults[index]);
-                }
-            }
-        });
-        
-        // Focus search input on page load
-        this.searchInput.focus();
+        this.searchInput.addEventListener('input', this.handleSearch);
+        this.searchInput.addEventListener('keydown', this.handleKeyNav);
+        this.setupModal();
+        this.showEmptyState();
     }
     
-    // Set loading state using data attribute
+    // Loading state via data attribute
     setLoading(isLoading) {
-        this.searchContainer.setAttribute('data-loading', isLoading);
+        if (isLoading) {
+            this.searchSection.setAttribute('data-loading', 'true');
+        } else {
+            this.searchSection.removeAttribute('data-loading');
+        }
     }
     
-    // Debounce implementation
-    handleSearchInput(event) {
-        const searchTerm = event.target.value.trim();
-        this.currentSearchTerm = searchTerm;
+    // Debounced search
+    handleSearch() {
+        const searchTerm = this.searchInput.value.trim();
         
-        // Clear existing timer
-        if (this.debounceTimer) {
-            clearTimeout(this.debounceTimer);
-        }
+        if (this.debounceTimer) clearTimeout(this.debounceTimer);
         
-        // Don't search for empty strings
         if (searchTerm.length === 0) {
-            this.clearResults();
+            this.showEmptyState();
             return;
         }
         
-        // Set debounce timer
+        this.setLoading(true);
         this.debounceTimer = setTimeout(() => {
-            this.performSearch(searchTerm);
+            this.searchMovies(searchTerm);
         }, 300);
     }
     
-    // Main search function with cache and abort controller
-    async performSearch(searchTerm) {
-        const normalizedTerm = searchTerm.toLowerCase().trim();
-        
-        // Check cache first with normalized key
-        if (this.searchCache.has(normalizedTerm)) {
-            console.log('📦 Cache hit for:', normalizedTerm);
-            this.currentResults = this.searchCache.get(normalizedTerm);
-            this.renderResults(this.currentResults, searchTerm);
+    // Search with cache and AbortController
+    async searchMovies(searchTerm) {
+        // Check cache
+        if (this.searchCache.has(searchTerm)) {
+            console.log('📦 Cache hit');
+            this.renderResults(this.searchCache.get(searchTerm));
+            this.setLoading(false);
             return;
         }
         
-        console.log('🌐 Fetching from API for:', normalizedTerm);
-        
-        // Cancel any in-flight request
+        // Cancel previous request
         if (this.currentAbortController) {
             this.currentAbortController.abort();
-            this.currentAbortController = null;
         }
         
-        // Create new abort controller for this request
         this.currentAbortController = new AbortController();
-        const controller = this.currentAbortController;
         
         try {
-            this.setLoading(true);
-            
             const response = await fetch(
                 `${this.baseUrl}/search/movie?api_key=${this.apiKey}&query=${encodeURIComponent(searchTerm)}`,
-                { signal: controller.signal }
+                { signal: this.currentAbortController.signal }
             );
             
-            if (!response.ok) {
-                throw new Error(`Search failed: ${response.status} - ${response.statusText}`);
-            }
+            if (!response.ok) throw new Error('Search failed');
             
             const data = await response.json();
-            
-            // Store with normalized key
-            this.searchCache.set(normalizedTerm, data.results);
-            this.currentResults = data.results;
-            
-            // Render results using Fragment pattern
-            this.renderResults(data.results, searchTerm);
+            this.searchCache.set(searchTerm, data.results);
+            this.renderResults(data.results);
             
         } catch (error) {
             if (error.name === 'AbortError') {
-                console.log('🔴 Search cancelled for:', normalizedTerm);
+                console.log('Request cancelled');
                 return;
             }
-            console.error('Search error:', error);
-            this.showError(`Failed to fetch movies: ${error.message}`);
+            this.showError('Failed to search. Try again.');
         } finally {
-            if (this.currentAbortController === controller) {
-                this.setLoading(false);
-                this.currentAbortController = null;
-            }
+            this.setLoading(false);
         }
     }
     
-    // Render results using DocumentFragment and template
-    renderResults(results, searchTerm) {
-        // Clear previous results
-        this.clearResultsList();
-        
-        if (results.length === 0) {
+    // Render with Template + DocumentFragment (ONE DOM write)
+    renderResults(movies) {
+        if (!movies || movies.length === 0) {
             this.showNoResults();
             return;
         }
         
-        // Create fragment
-        const fragment = new DocumentFragment();
+        this.currentResults = movies;
         
-        results.forEach(movie => {
-            // Clone template
-            const clone = this.resultTemplate.content.cloneNode(true);
-            const movieElement = clone.querySelector('.movie-result');
-            const titleElement = clone.querySelector('.movie-title');
-            const yearElement = clone.querySelector('.movie-year');
+        // Use DocumentFragment for performance
+        const fragment = new DocumentFragment();
+        const grid = document.createElement('div');
+        grid.className = 'movies-grid';
+        
+        movies.slice(0, 12).forEach(movie => {
+            const clone = this.template.content.cloneNode(true);
+            const poster = clone.querySelector('.movie-poster');
+            const title = clone.querySelector('.movie-title');
+            const year = clone.querySelector('.movie-year');
+            const card = clone.querySelector('.movie-card');
             
-            // Set data attribute for movie ID
-            movieElement.dataset.movieId = movie.id;
+            poster.src = movie.poster_path 
+                ? this.imageBaseUrl + movie.poster_path 
+                : 'https://via.placeholder.com/300x450?text=No+Poster';
+            poster.alt = movie.title;
             
-            // XSS-safe title with highlighting
-            const highlightedTitle = this.buildHighlightedTitle(
-                movie.title, 
-                searchTerm
-            );
+            // XSS-safe: textContent, not innerHTML
+            title.textContent = movie.title;
+            year.textContent = movie.release_date ? new Date(movie.release_date).getFullYear() : 'Unknown';
             
-            // Clear and append title
-            titleElement.innerHTML = '';
-            titleElement.appendChild(highlightedTitle);
+            card.dataset.movieId = movie.id;
+            card.addEventListener('click', () => this.showMovieDetails(movie.id));
             
-            // Year (XSS safe - textContent)
-            if (movie.release_date) {
-                yearElement.textContent = new Date(movie.release_date).getFullYear();
-            } else {
-                yearElement.textContent = 'Year unknown';
-            }
-            
-            fragment.appendChild(clone);
+            grid.appendChild(clone);
         });
         
-        // Single DOM write
-        this.resultsList.appendChild(fragment);
+        fragment.appendChild(grid);
         
-        // Reset selected index
-        this.selectedIndex = -1;
+        // SINGLE DOM write
+        this.resultsContainer.innerHTML = '';
+        this.resultsContainer.appendChild(fragment);
     }
     
-    // Clear results list safely
-    clearResultsList() {
-        while (this.resultsList.firstChild) {
-            this.resultsList.removeChild(this.resultsList.firstChild);
-        }
-    }
-    
-    // Show no results message
-    showNoResults() {
-        const noResultsDiv = document.createElement('div');
-        noResultsDiv.className = 'empty-state';
-        noResultsDiv.textContent = 'No movies found. Try a different search term.';
-        this.resultsList.appendChild(noResultsDiv);
-    }
-    
-    // XSS-safe highlighting using DOM API only
+    // XSS-safe highlighting using DOM API
     buildHighlightedTitle(title, query) {
         const container = document.createElement('span');
         
@@ -226,16 +160,13 @@ class CineSearchPro {
             return container;
         }
         
-        // Create before text (XSS safe - textContent)
         const before = document.createElement('span');
         before.textContent = title.substring(0, idx);
         
-        // Create highlighted match (XSS safe - textContent)
         const match = document.createElement('span');
         match.className = 'highlight';
         match.textContent = title.substring(idx, idx + query.length);
         
-        // Create after text (XSS safe - textContent)
         const after = document.createElement('span');
         after.textContent = title.substring(idx + query.length);
         
@@ -246,324 +177,132 @@ class CineSearchPro {
         return container;
     }
     
-    // Clear results
-    clearResults() {
-        this.clearResultsList();
-        this.currentResults = [];
-        this.selectedIndex = -1;
-    }
-    
-    // Show error message (XSS safe)
-    showError(message) {
-        this.clearResultsList();
-        const errorDiv = document.createElement('div');
-        errorDiv.className = 'error-message';
-        errorDiv.textContent = message;
-        this.resultsList.appendChild(errorDiv);
-    }
-    
-    // Show persistent error for API key
-    showPersistentError(message) {
-        const errorDiv = document.createElement('div');
-        errorDiv.className = 'error-message';
-        errorDiv.textContent = message;
-        errorDiv.style.margin = '20px';
-        errorDiv.style.textAlign = 'center';
-        document.querySelector('.container').prepend(errorDiv);
-    }
-    
-    // Fetch movie details with concurrent requests
-    async fetchMovieDetails(movieId) {
-        // Show loading state
-        this.movieDetails.innerHTML = '';
-        const loadingDiv = document.createElement('div');
-        loadingDiv.className = 'loading';
-        loadingDiv.textContent = 'Loading movie details';
-        this.movieDetails.appendChild(loadingDiv);
+    // Movie details with Promise.allSettled (resilience)
+    async showMovieDetails(movieId) {
+        this.modal.style.display = 'flex';
+        this.modalContent.innerHTML = '<div class="loading-state">Loading...</div>';
         
-        const urls = [
-            `${this.baseUrl}/movie/${movieId}?api_key=${this.apiKey}`,           // Details
-            `${this.baseUrl}/movie/${movieId}/credits?api_key=${this.apiKey}`,  // Credits
-            `${this.baseUrl}/movie/${movieId}/videos?api_key=${this.apiKey}`    // Videos
-        ];
+        // Promise.allSettled - one failure doesn't break others
+        const results = await Promise.allSettled([
+            fetch(`${this.baseUrl}/movie/${movieId}?api_key=${this.apiKey}`).then(r => r.json()),
+            fetch(`${this.baseUrl}/movie/${movieId}/credits?api_key=${this.apiKey}`).then(r => r.json()),
+            fetch(`${this.baseUrl}/movie/${movieId}/videos?api_key=${this.apiKey}`).then(r => r.json())
+        ]);
         
-        // For testing resilience - uncomment to test error handling
-        // urls[1] = urls[1] + '/broken'; // This will break the credits endpoint
-        
-        try {
-            // Use Promise.allSettled for resilience
-            const results = await Promise.allSettled(
-                urls.map(url => fetch(url).then(res => {
-                    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-                    return res.json();
-                }))
-            );
-            
-            this.renderMovieDetails(results);
-            
-        } catch (error) {
-            console.error('Error fetching details:', error);
-            this.showDetailError('Failed to load movie details');
-        }
+        this.renderMovieDetails(results);
     }
     
-    // Render movie details (XSS safe)
     renderMovieDetails(results) {
         const [detailsResult, creditsResult, videosResult] = results;
         
-        // Clear previous details
-        this.movieDetails.innerHTML = '';
-        
-        // Clone template
-        const clone = this.detailTemplate.content.cloneNode(true);
-        
-        // Get sections (use querySelector for fragments)
-        const detailsSection = clone.querySelector('#detailsSection');
-        const creditsSection = clone.querySelector('#creditsSection');
-        const videosSection = clone.querySelector('#videosSection');
-        
-        // Clear sections
-        detailsSection.innerHTML = '';
-        creditsSection.innerHTML = '';
-        videosSection.innerHTML = '';
-        
-        // Handle Details (XSS-safe)
-        if (detailsResult.status === 'fulfilled') {
-            const details = detailsResult.value;
-            
-            // Build details DOM safely
-            const title = document.createElement('h3');
-            title.textContent = details.title;
-            
-            // Add poster if available (XSS safe - using background-image)
-            if (details.poster_path) {
-                const poster = document.createElement('div');
-                poster.style.cssText = `
-                    width: 100%;
-                    height: 200px;
-                    background-image: url(${this.imageBaseUrl}${details.poster_path});
-                    background-size: cover;
-                    background-position: center;
-                    border-radius: 8px;
-                    margin-bottom: 15px;
-                `;
-                detailsSection.appendChild(poster);
-            }
-            
-            const overview = document.createElement('p');
-            overview.textContent = details.overview || 'No overview available';
-            
-            const releaseDate = document.createElement('p');
-            releaseDate.innerHTML = '<strong>Release Date:</strong> ';
-            releaseDate.appendChild(document.createTextNode(details.release_date || 'Unknown'));
-            
-            const rating = document.createElement('p');
-            rating.innerHTML = '<strong>Rating:</strong> ';
-            rating.appendChild(document.createTextNode(
-                details.vote_average ? `${details.vote_average.toFixed(1)}/10` : 'N/A'
-            ));
-            
-            detailsSection.appendChild(title);
-            detailsSection.appendChild(overview);
-            detailsSection.appendChild(releaseDate);
-            detailsSection.appendChild(rating);
-            
-        } else {
-            detailsSection.classList.add('error');
-            const errorMsg = document.createElement('p');
-            errorMsg.className = 'error-message';
-            errorMsg.textContent = 'Failed to load movie details';
-            detailsSection.appendChild(errorMsg);
+        if (detailsResult.status !== 'fulfilled') {
+            this.modalContent.innerHTML = '<div class="error-state">Failed to load details</div>';
+            return;
         }
         
-        // Handle Credits (XSS-safe)
-        if (creditsResult.status === 'fulfilled') {
-            const credits = creditsResult.value;
-            const cast = credits.cast?.slice(0, 5).map(c => c.name).join(', ') || 'No cast info';
-            const director = credits.crew?.find(c => c.job === 'Director')?.name || 'Unknown';
-            
-            const title = document.createElement('h4');
-            title.textContent = 'Cast & Crew';
-            
-            const directorPara = document.createElement('p');
-            directorPara.innerHTML = '<strong>Director:</strong> ';
-            directorPara.appendChild(document.createTextNode(director));
-            
-            const castPara = document.createElement('p');
-            castPara.innerHTML = '<strong>Cast:</strong> ';
-            castPara.appendChild(document.createTextNode(cast));
-            
-            creditsSection.appendChild(title);
-            creditsSection.appendChild(directorPara);
-            creditsSection.appendChild(castPara);
-            
-        } else {
-            creditsSection.classList.add('error');
-            const errorMsg = document.createElement('p');
-            errorMsg.className = 'error-message';
-            errorMsg.textContent = 'Failed to load credits';
-            creditsSection.appendChild(errorMsg);
-        }
+        const details = detailsResult.value;
+        const credits = creditsResult.status === 'fulfilled' ? creditsResult.value : { cast: [] };
+        const videos = videosResult.status === 'fulfilled' ? videosResult.value : { results: [] };
         
-        // Handle Videos (XSS-safe)
-        if (videosResult.status === 'fulfilled') {
-            const videos = videosResult.value;
-            const trailer = videos.results?.find(v => v.type === 'Trailer');
-            
-            const title = document.createElement('h4');
-            title.textContent = 'Videos';
-            videosSection.appendChild(title);
-            
-            if (trailer) {
-                const trailerPara = document.createElement('p');
-                trailerPara.textContent = `Trailer: ${trailer.name}`;
-                
-                const link = document.createElement('a');
-                link.href = `https://www.youtube.com/watch?v=${trailer.key}`;
-                link.target = '_blank';
-                link.rel = 'noopener noreferrer';
-                link.textContent = 'Watch Trailer';
-                
-                videosSection.appendChild(trailerPara);
-                videosSection.appendChild(link);
-            } else {
-                const noVideos = document.createElement('p');
-                noVideos.textContent = 'No videos available';
-                videosSection.appendChild(noVideos);
-            }
-            
-        } else {
-            videosSection.classList.add('error');
-            const errorMsg = document.createElement('p');
-            errorMsg.className = 'error-message';
-            errorMsg.textContent = 'Failed to load videos';
-            videosSection.appendChild(errorMsg);
-        }
+        const cast = credits.cast ? credits.cast.slice(0, 6).map(c => c.name) : [];
         
-        this.movieDetails.appendChild(clone);
+        // Find trailer (graceful fallback)
+        const trailer = videos.results?.find(v => v.type === 'Trailer' && v.site === 'YouTube');
+        
+        const rating = details.vote_average ? details.vote_average.toFixed(1) : 'N/A';
+        const year = details.release_date ? details.release_date.split('-')[0] : 'Unknown';
+        const genres = details.genres ? details.genres.map(g => g.name).join(', ') : 'N/A';
+        
+        this.modalContent.innerHTML = `
+            <div class="modal-movie">
+                <img class="modal-poster" src="${details.poster_path ? this.imageBaseUrl + details.poster_path : 'https://via.placeholder.com/300x450?text=No+Poster'}" alt="${this.escapeHtml(details.title)}">
+                <div class="modal-info">
+                    <h2 class="modal-title">${this.escapeHtml(details.title)}</h2>
+                    <div class="modal-rating">⭐ ${rating}/10 · ${year}</div>
+                    <p class="modal-overview">${this.escapeHtml(details.overview || 'No description available')}</p>
+                    <div class="modal-details">
+                        <p><strong>Runtime:</strong> ${details.runtime ? details.runtime + ' min' : 'Unknown'}</p>
+                        <p><strong>Genres:</strong> ${genres}</p>
+                    </div>
+                    <h4>Starring:</h4>
+                    <div class="cast-list">
+                        ${cast.map(name => `<span class="cast-tag">${this.escapeHtml(name)}</span>`).join('')}
+                    </div>
+                    ${trailer ? `<button class="watch-btn" onclick="window.open('https://www.youtube.com/watch?v=${trailer.key}', '_blank')">▶ Watch Trailer</button>` : '<p style="color:#888;">No trailer available</p>'}
+                </div>
+            </div>
+        `;
     }
     
-    // Show detail error (XSS safe)
-    showDetailError(message) {
-        this.movieDetails.innerHTML = '';
-        const errorDiv = document.createElement('div');
-        errorDiv.className = 'error-message';
-        errorDiv.textContent = message;
-        this.movieDetails.appendChild(errorDiv);
-    }
-    
-    // Select and display movie details
-    selectMovie(movie) {
-        if (!movie) return;
+    // Keyboard navigation
+    handleKeyNav(event) {
+        const cards = document.querySelectorAll('.movie-card');
+        if (cards.length === 0) return;
         
-        // Find and highlight the selected movie in results
-        const allResults = Array.from(this.resultsList.children);
-        const selectedIndex = this.currentResults.findIndex(m => m.id === movie.id);
-        
-        // Remove active class from all results
-        allResults.forEach(result => {
-            result.classList.remove('active');
-            result.removeAttribute('aria-selected');
-        });
-        
-        // Add active class to the selected movie
-        if (selectedIndex !== -1) {
-            allResults[selectedIndex].classList.add('active');
-            allResults[selectedIndex].setAttribute('aria-selected', 'true');
-            this.selectedIndex = selectedIndex;
-        }
-        
-        // Fetch and display movie details
-        this.fetchMovieDetails(movie.id);
-    }
-    
-    // Handle keyboard navigation
-    handleKeyNavigation(event) {
-        const results = Array.from(this.resultsList.children).filter(
-            child => child.classList.contains('movie-result')
-        );
-        
-        if (results.length === 0) return;
+        let currentIndex = Array.from(cards).findIndex(c => c.classList.contains('active'));
+        if (currentIndex === -1) currentIndex = 0;
         
         switch(event.key) {
             case 'ArrowDown':
                 event.preventDefault();
-                this.selectedIndex = Math.min(this.selectedIndex + 1, results.length - 1);
-                this.updateSelectedResult(results);
+                currentIndex = Math.min(currentIndex + 1, cards.length - 1);
                 break;
-                
             case 'ArrowUp':
                 event.preventDefault();
-                this.selectedIndex = Math.max(this.selectedIndex - 1, 0);
-                this.updateSelectedResult(results);
+                currentIndex = Math.max(currentIndex - 1, 0);
                 break;
-                
             case 'Enter':
                 event.preventDefault();
-                if (this.selectedIndex >= 0 && this.selectedIndex < results.length) {
-                    const movieId = results[this.selectedIndex].dataset.movieId;
-                    const movie = this.currentResults.find(m => m.id == movieId);
-                    if (movie) {
-                        this.selectMovie(movie);
-                    }
-                }
-                break;
-                
-            case 'Escape':
-                this.clearResults();
-                this.searchInput.value = '';
-                this.searchInput.focus();
-                break;
+                const movieId = cards[currentIndex]?.dataset.movieId;
+                if (movieId) this.showMovieDetails(movieId);
+                return;
+            default:
+                return;
         }
+        
+        cards.forEach((c, i) => c.classList.toggle('active', i === currentIndex));
+        cards[currentIndex]?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
     }
     
-    // Update selected result styling
-    updateSelectedResult(results) {
-        // Remove all active classes and aria-selected
-        results.forEach(result => {
-            result.classList.remove('active');
-            result.removeAttribute('aria-selected');
+    // UI States
+    showEmptyState() {
+        this.resultsContainer.innerHTML = '<div class="empty-state">🔍 Start typing to search for movies</div>';
+    }
+    
+    showNoResults() {
+        this.resultsContainer.innerHTML = '<div class="empty-state">😕 No movies found. Try a different search.</div>';
+    }
+    
+    showError(message) {
+        this.resultsContainer.innerHTML = `<div class="error-state">❌ ${this.escapeHtml(message)}</div>`;
+    }
+    
+    // Modal setup
+    setupModal() {
+        const closeBtn = document.querySelector('.close');
+        closeBtn?.addEventListener('click', () => {
+            this.modal.style.display = 'none';
         });
         
-        // Add active class to selected
-        if (this.selectedIndex >= 0 && this.selectedIndex < results.length) {
-            const selected = results[this.selectedIndex];
-            selected.classList.add('active');
-            selected.setAttribute('aria-selected', 'true');
-            
-            // Scroll into view if needed
-            selected.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
-        }
+        window.addEventListener('click', (e) => {
+            if (e.target === this.modal) {
+                this.modal.style.display = 'none';
+            }
+        });
     }
     
-    // Clear cache (utility method for debugging)
-    clearCache() {
-        this.searchCache.clear();
-        console.log('🗑️ Cache cleared');
-        this.showError('Cache cleared. Next search will fetch from API.');
-        setTimeout(() => {
-            if (this.resultsList.children.length === 0) {
-                this.clearResultsList();
-            }
-        }, 2000);
+    // XSS protection
+    escapeHtml(text) {
+        if (!text) return '';
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
     }
 }
 
-// Initialize app when DOM is ready
+// Start app
 document.addEventListener('DOMContentLoaded', () => {
-    window.cineSearch = new CineSearchPro();
-    
-    // Add cache clear shortcut for testing (Ctrl+Shift+C)
-    document.addEventListener('keydown', (e) => {
-        if (e.ctrlKey && e.shiftKey && e.key === 'C') {
-            e.preventDefault();
-            if (window.cineSearch) {
-                window.cineSearch.clearCache();
-            }
-        }
-    });
-    
-    console.log('🎬 CineSearch Pro initialized');
-    console.log('💡 Tip: Press Ctrl+Shift+C to clear cache');
-    console.log('🔧 For testing: Uncomment the broken URL in fetchMovieDetails() to test resilience');
+    window.app = new CineSearchPro();
+    console.log('✅ CineSearch Pro ready');
+    console.log('📦 Features: Debounce, Cache, AbortController, Promise.allSettled, Template + Fragment');
 });
